@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { z } from 'zod';
 import { AttachmentsService, ContentResourceService, OpenAPI, SearchService, UserService } from './confluence-client/index.js';
-import { handleApiOperation, resolveOpenApiBase } from '@atlassian-dc-mcp/common';
+import { downloadAttachment, handleApiOperation, resolveOpenApiBase, type AttachmentDownloadOptions } from '@atlassian-dc-mcp/common';
 import { CONFLUENCE_PRODUCT, getDefaultPageSize, getMissingConfig } from './config.js';
 import { ConfluenceBodyMode, shapeConfluenceContent } from './confluence-response-mapper.js';
 
@@ -48,6 +48,8 @@ function resolveToken(token: string | (() => string | undefined), missingTokenMe
 
 export class ConfluenceService {
   private readonly getPageSize: () => number;
+  private readonly baseUrl: string;
+  private readonly tokenProvider: string | (() => string | undefined);
 
   constructor(
     host: string | undefined,
@@ -55,15 +57,30 @@ export class ConfluenceService {
     apiBasePath?: string,
     getPageSize: () => number = getDefaultPageSize,
   ) {
-    OpenAPI.BASE = resolveOpenApiBase({
+    const base = resolveOpenApiBase({
       host,
       apiBasePath,
       defaultBasePath: CONFLUENCE_PRODUCT.defaultApiBasePath ?? '',
       strippableSuffixes: CONFLUENCE_PRODUCT.apiBasePathStrippableSuffixes,
     });
+    OpenAPI.BASE = base;
     OpenAPI.TOKEN = resolveToken(token, 'Missing required environment variable: CONFLUENCE_API_TOKEN');
     OpenAPI.VERSION = '1.0';
+    this.baseUrl = base;
+    this.tokenProvider = token;
     this.getPageSize = getPageSize;
+  }
+
+  /**
+   * Builds an absolute download URL from a Confluence attachment `_links.download`
+   * value, which is a path relative to the site base (context path included).
+   */
+  private buildDownloadUrl(downloadLink: string): string {
+    if (/^https?:\/\//i.test(downloadLink)) {
+      return downloadLink;
+    }
+    const base = this.baseUrl.replace(/\/$/, '');
+    return `${base}${downloadLink.startsWith('/') ? '' : '/'}${downloadLink}`;
   }
   /**
    * Get a Confluence page by ID
@@ -186,6 +203,52 @@ export class ConfluenceService {
   }
 
   /**
+   * Download one or more attachments from a Confluence content entity.
+   * @param contentId The ID of the content the attachment(s) are on
+   * @param filename If provided, download only the attachment with this exact filename; otherwise download all attachments on the content
+   * @param options Save-to-disk and inline-content options (see AttachmentDownloadOptions)
+   */
+  async downloadAttachmentFromContent(
+    contentId: string,
+    filename?: string,
+    options?: AttachmentDownloadOptions,
+  ) {
+    return handleApiOperation(async () => {
+      const list = await AttachmentsService.getAttachments(contentId, undefined, filename);
+      const results = ((list as any)?.results ?? []) as Array<any>;
+      if (results.length === 0) {
+        throw new Error(
+          filename
+            ? `No attachment named "${filename}" found on content ${contentId}`
+            : `No attachments found on content ${contentId}`,
+        );
+      }
+
+      const targets = filename ? [results[0]] : results;
+      const attachments = [];
+      for (const attachment of targets) {
+        const downloadLink = attachment?._links?.download;
+        if (!downloadLink) {
+          throw new Error(`Attachment "${attachment?.title ?? filename}" has no download link`);
+        }
+        const name = attachment?.title ?? filename ?? 'attachment';
+        const mediaType = attachment?.metadata?.mediaType ?? attachment?.extensions?.mediaType;
+        attachments.push(
+          await downloadAttachment({
+            url: this.buildDownloadUrl(downloadLink),
+            token: this.tokenProvider,
+            filename: name,
+            mediaType,
+            options,
+          }),
+        );
+      }
+
+      return { contentId, count: attachments.length, attachments };
+    }, 'Error downloading attachment');
+  }
+
+  /**
    * Search for spaces by text
    * @param searchText Text to search for in space names or descriptions
    * @param limit Maximum number of results to return
@@ -270,5 +333,13 @@ export const confluenceToolSchemas = {
     hidden: z.boolean().optional().describe("If true, no notification email or activity stream entry is generated"),
     allowDuplicated: z.boolean().optional().describe("Allow upload even if an attachment with the same filename already exists"),
     versionIfExists: z.boolean().optional().describe("If true and an attachment with the same filename already exists, upload as a new version instead of failing")
+  },
+  downloadAttachment: {
+    contentId: z.string().describe("ID of the Confluence content (page) whose attachment(s) to download"),
+    filename: z.string().optional().describe("Exact filename of a single attachment to download. If omitted, all attachments on the content are downloaded."),
+    saveDir: z.string().optional().describe("Absolute local directory to save the attachment(s) into. The attachment filename is used as the file name. Preferred when downloading multiple files."),
+    savePath: z.string().optional().describe("Absolute local file path to save a single attachment to. Overrides saveDir. Only meaningful when downloading a single attachment."),
+    returnContent: z.enum(['none', 'base64', 'text']).optional().describe("Whether to embed the file bytes in the response: 'none' (default), 'base64' for binary, or 'text' for UTF-8 text. Combine with saveDir/savePath to also save to disk."),
+    maxInlineBytes: z.number().optional().describe("Maximum bytes to embed inline when returnContent is base64/text. Larger files are saved (if a path is given) but not embedded. Defaults to 1 MiB.")
   }
 };

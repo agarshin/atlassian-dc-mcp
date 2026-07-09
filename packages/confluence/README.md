@@ -208,3 +208,29 @@ Parameters:
 - `start` (number, optional): Start index for pagination
 - `expand` (string, optional): Comma-separated list of properties to expand
 - `excerpt` (`none` | `highlight`, optional): Excerpt mode for search results. Defaults to `none`.
+
+#### 6. confluence_uploadAttachment
+
+Upload a local file as an attachment to a Confluence content (page).
+
+Parameters:
+- `contentId` (string, required): ID of the content (page) to attach the file to
+- `filePath` (string, required): Absolute local filesystem path of the file to upload
+- `filename` (string, optional): Override for the attachment filename (defaults to the basename of `filePath`)
+- `comment` (string, optional): Comment describing the attachment
+- `minorEdit` (boolean, optional): If true, no notification email is sent to watchers
+- `hidden` (boolean, optional): If true, no notification email or activity stream entry is generated
+- `allowDuplicated` (boolean, optional): Allow upload even if an attachment with the same filename already exists
+- `versionIfExists` (boolean, optional): If true and an attachment with the same filename already exists, upload as a new version instead of failing
+
+#### 7. confluence_downloadAttachment
+
+Download one or more attachments from a Confluence content (page). Can save to a local path and/or return the file content inline (base64 or text) — useful for inspecting a file or moving it elsewhere (e.g. re-uploading to a Jira issue).
+
+Parameters:
+- `contentId` (string, required): ID of the content (page) whose attachment(s) to download
+- `filename` (string, optional): Exact filename of a single attachment to download. If omitted, all attachments on the content are downloaded.
+- `saveDir` (string, optional): Absolute local directory to save the attachment(s) into. The attachment filename is used as the file name. Preferred when downloading multiple files.
+- `savePath` (string, optional): Absolute local file path to save a single attachment to. Overrides `saveDir`.
+- `returnContent` (`none` | `base64` | `text`, optional): Whether to embed the file bytes in the response. Defaults to `none`. Combine with `saveDir`/`savePath` to also save to disk.
+- `maxInlineBytes` (number, optional): Maximum bytes to embed inline when `returnContent` is `base64`/`text`. Larger files are saved (if a path is given) but not embedded. Defaults to 1 MiB.

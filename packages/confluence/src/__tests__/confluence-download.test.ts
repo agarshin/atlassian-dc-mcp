@@ -1,0 +1,78 @@
+import { ConfluenceService } from '../confluence-service.js';
+import { AttachmentsService } from '../confluence-client/index.js';
+
+jest.mock('../confluence-client/index.js', () => ({
+  AttachmentsService: {
+    getAttachments: jest.fn(),
+  },
+  ContentResourceService: {},
+  SearchService: {},
+  UserService: {},
+  OpenAPI: { BASE: '', TOKEN: '', VERSION: '' },
+}));
+
+function mockFetchText(text: string) {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: { get: () => 'text/plain' },
+    arrayBuffer: async () => Buffer.from(text),
+  }) as unknown as typeof fetch;
+}
+
+describe('ConfluenceService.downloadAttachmentFromContent', () => {
+  let service: ConfluenceService;
+
+  beforeEach(() => {
+    service = new ConfluenceService('test-host', 'test-token');
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('builds an absolute download URL from the relative _links.download and returns content', async () => {
+    (AttachmentsService.getAttachments as jest.Mock).mockResolvedValue({
+      results: [
+        { title: 'doc.txt', metadata: { mediaType: 'text/plain' }, _links: { download: '/download/attachments/123/doc.txt?version=1' } },
+      ],
+    });
+    mockFetchText('file body');
+
+    const result = await service.downloadAttachmentFromContent('123', 'doc.txt', { returnContent: 'text' });
+
+    expect(AttachmentsService.getAttachments).toHaveBeenCalledWith('123', undefined, 'doc.txt');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://test-host/download/attachments/123/doc.txt?version=1',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) }),
+    );
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ contentId: '123', count: 1 });
+    expect(result.data!.attachments[0]).toMatchObject({ filename: 'doc.txt', content: 'file body', mediaType: 'text/plain' });
+  });
+
+  it('downloads all attachments when no filename is given', async () => {
+    (AttachmentsService.getAttachments as jest.Mock).mockResolvedValue({
+      results: [
+        { title: 'a.txt', _links: { download: '/download/attachments/123/a.txt' } },
+        { title: 'b.txt', _links: { download: '/download/attachments/123/b.txt' } },
+      ],
+    });
+    mockFetchText('x');
+
+    const result = await service.downloadAttachmentFromContent('123');
+
+    expect(result.success).toBe(true);
+    expect(result.data!.count).toBe(2);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a failure when the content has no matching attachment', async () => {
+    (AttachmentsService.getAttachments as jest.Mock).mockResolvedValue({ results: [] });
+
+    const result = await service.downloadAttachmentFromContent('123', 'missing.txt');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No attachment named "missing.txt"');
+  });
+});
