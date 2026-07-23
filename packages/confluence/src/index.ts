@@ -1,7 +1,7 @@
-import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig } from '@atlassian-dc-mcp/common';
+import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig, resolveAttachmentGateway } from '@atlassian-dc-mcp/common';
 import { ConfluenceService, ConfluenceContent, confluenceToolSchemas } from './confluence-service.js';
 import { shapeConfluenceMutationAck } from './confluence-response-mapper.js';
-import { getConfluenceRuntimeConfig, getDefaultPageSize } from './config.js';
+import { CONFLUENCE_PRODUCT, getConfluenceRuntimeConfig, getDefaultPageSize } from './config.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -141,35 +141,54 @@ server.tool(
   }
 );
 
-server.tool(
-  "confluence_uploadAttachment",
-  "Upload a local file as an attachment to a Confluence content (page)",
-  confluenceToolSchemas.uploadAttachment,
-  async ({ contentId, filePath, filename, comment, minorEdit, hidden, allowDuplicated, versionIfExists }) => {
-    const result = await confluenceService.uploadAttachment(
-      contentId,
-      filePath,
-      filename,
-      comment,
-      minorEdit,
-      hidden,
-      allowDuplicated,
-      versionIfExists,
-    );
-    return formatToolResponse(result);
-  }
-);
+const attachmentGateway = resolveAttachmentGateway(CONFLUENCE_PRODUCT);
 
+// Filesystem-reading upload is only registered when the operator explicitly enables it.
+if (attachmentGateway.upload.enabled) {
+  server.tool(
+    "confluence_uploadAttachment",
+    `Upload a local file as an attachment to a Confluence content (page) in the ${confluenceInstanceType}. The file must live under the server-configured upload directory; the path is given relative to that directory.`,
+    confluenceToolSchemas.uploadAttachment,
+    async ({ contentId, sourcePath, filename, comment, minorEdit, hidden, allowDuplicated, versionIfExists }) => {
+      const result = await confluenceService.uploadAttachment(
+        contentId,
+        sourcePath,
+        attachmentGateway.upload,
+        filename,
+        comment,
+        minorEdit,
+        hidden,
+        allowDuplicated,
+        versionIfExists,
+      );
+      return formatToolResponse(result);
+    }
+  );
+}
+
+// Download always returns content inline (no filesystem access). Saving to disk is
+// only offered when the operator enables it, and is confined to the configured directory.
+const downloadSaveEnabled = attachmentGateway.download.enabled;
 server.tool(
   "confluence_downloadAttachment",
-  `Download one or more attachments from a Confluence content (page) in the ${confluenceInstanceType}. Can save to a local path and/or return the file content inline (base64 or text). Useful for inspecting a file or moving it elsewhere (e.g. re-uploading to a Jira issue).`,
-  confluenceToolSchemas.downloadAttachment,
-  async ({ contentId, filename, saveDir, savePath, returnContent, maxInlineBytes }) => {
-    const result = await confluenceService.downloadAttachmentFromContent(contentId, filename, {
-      saveDir,
-      savePath,
+  `Download one or more attachments from a Confluence content (page) in the ${confluenceInstanceType}. Returns the file content inline (base64 or text). Useful for inspecting a file or moving it elsewhere (e.g. re-uploading to a Jira issue).${downloadSaveEnabled ? ' Can also save into the server-configured download directory; existing files are never overwritten.' : ' Saving to local disk is disabled on this server.'}`,
+  { ...confluenceToolSchemas.downloadAttachment, ...(downloadSaveEnabled ? confluenceToolSchemas.downloadAttachmentSaveFields : {}) },
+  async ({ contentId, filename, returnContent, maxInlineBytes, save, saveName }: {
+    contentId: string;
+    filename?: string;
+    returnContent?: 'none' | 'base64' | 'text';
+    maxInlineBytes?: number;
+    save?: boolean;
+    saveName?: string;
+  }) => {
+    const result = await confluenceService.downloadAttachmentFromContent({
+      contentId,
+      filename,
+      save,
+      saveName,
       returnContent,
       maxInlineBytes,
+      downloadSide: attachmentGateway.download,
     });
     return formatToolResponse(result);
   }

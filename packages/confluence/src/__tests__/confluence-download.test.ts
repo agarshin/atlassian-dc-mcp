@@ -1,5 +1,8 @@
+import type { AttachmentGatewaySide } from '@atlassian-dc-mcp/common';
 import { ConfluenceService } from '../confluence-service.js';
 import { AttachmentsService } from '../confluence-client/index.js';
+
+const DISABLED_DOWNLOAD: AttachmentGatewaySide = { enabled: false, roots: [], maxBytes: 25 * 1024 * 1024 };
 
 jest.mock('../confluence-client/index.js', () => ({
   AttachmentsService: {
@@ -39,7 +42,7 @@ describe('ConfluenceService.downloadAttachmentFromContent', () => {
     });
     mockFetchText('file body');
 
-    const result = await service.downloadAttachmentFromContent('123', 'doc.txt', { returnContent: 'text' });
+    const result = await service.downloadAttachmentFromContent({ contentId: '123', filename: 'doc.txt', returnContent: 'text', downloadSide: DISABLED_DOWNLOAD });
 
     expect(AttachmentsService.getAttachments).toHaveBeenCalledWith('123', undefined, 'doc.txt');
     expect(global.fetch).toHaveBeenCalledWith(
@@ -60,7 +63,7 @@ describe('ConfluenceService.downloadAttachmentFromContent', () => {
     });
     mockFetchText('x');
 
-    const result = await service.downloadAttachmentFromContent('123');
+    const result = await service.downloadAttachmentFromContent({ contentId: '123', downloadSide: DISABLED_DOWNLOAD });
 
     expect(result.success).toBe(true);
     expect(result.data!.count).toBe(2);
@@ -70,9 +73,17 @@ describe('ConfluenceService.downloadAttachmentFromContent', () => {
   it('returns a failure when the content has no matching attachment', async () => {
     (AttachmentsService.getAttachments as jest.Mock).mockResolvedValue({ results: [] });
 
-    const result = await service.downloadAttachmentFromContent('123', 'missing.txt');
+    const result = await service.downloadAttachmentFromContent({ contentId: '123', filename: 'missing.txt', downloadSide: DISABLED_DOWNLOAD });
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('No attachment named "missing.txt"');
+  });
+
+  it('refuses to save to disk when downloads are disabled', async () => {
+    const result = await service.downloadAttachmentFromContent({ contentId: '123', filename: 'doc.txt', save: true, downloadSide: DISABLED_DOWNLOAD });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('disabled');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

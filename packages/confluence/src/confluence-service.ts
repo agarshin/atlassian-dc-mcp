@@ -3,7 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { z } from 'zod';
 import { AttachmentsService, ContentResourceService, OpenAPI, SearchService, UserService } from './confluence-client/index.js';
-import { downloadAttachment, handleApiOperation, resolveOpenApiBase, type AttachmentDownloadOptions } from '@atlassian-dc-mcp/common';
+import {
+  downloadAttachment,
+  handleApiOperation,
+  resolveDownloadDestination,
+  resolveOpenApiBase,
+  resolveUploadSource,
+  type AttachmentContentEncoding,
+  type AttachmentGatewaySide,
+} from '@atlassian-dc-mcp/common';
 import { CONFLUENCE_PRODUCT, getDefaultPageSize, getMissingConfig } from './config.js';
 import { ConfluenceBodyMode, shapeConfluenceContent } from './confluence-response-mapper.js';
 
@@ -149,8 +157,9 @@ export class ConfluenceService {
   /**
    * Upload a file as an attachment to a Confluence content entity
    * @param contentId The ID of the content the attachment will be attached to
-   * @param filePath Local filesystem path to the file to upload
-   * @param filename Optional override for the attachment filename (defaults to basename of filePath)
+   * @param sourcePath Path to the file to upload, relative to a server-configured upload directory
+   * @param uploadSide Resolved upload gateway (roots, size limit, enabled flag)
+   * @param filename Optional override for the attachment filename (defaults to basename of sourcePath)
    * @param comment Optional comment describing the attachment
    * @param minorEdit If true, no notification email will be generated
    * @param hidden If true, no notification email or activity stream entry will be generated
@@ -158,7 +167,8 @@ export class ConfluenceService {
    */
   async uploadAttachment(
     contentId: string,
-    filePath: string,
+    sourcePath: string,
+    uploadSide: AttachmentGatewaySide,
     filename?: string,
     comment?: string,
     minorEdit?: boolean,
@@ -166,85 +176,107 @@ export class ConfluenceService {
     allowDuplicated?: boolean,
     versionIfExists?: boolean,
   ) {
-    const buffer = await readFile(filePath);
-    const name = filename || basename(filePath);
-    const file = new File([buffer], name);
-    // X-Atlassian-Token: nocheck is required for multipart attachment POSTs (XSRF bypass).
-    // Set it only for the duration of this call; restore afterwards.
-    const prevHeaders = OpenAPI.HEADERS;
-    OpenAPI.HEADERS = { 'X-Atlassian-Token': 'nocheck' };
-    try {
-      if (versionIfExists) {
-        const existing = await AttachmentsService.getAttachments(contentId, undefined, name);
-        const existingId = (existing as any)?.results?.[0]?.id;
-        if (existingId) {
-          // MockAttachmentRequest types file as string, but getFormData handles Blob/File via isBlob()
-          return await handleApiOperation(
-            () => AttachmentsService.updateData(existingId, contentId, { file } as any),
-            'Error uploading attachment version',
-          );
+    return handleApiOperation(async () => {
+      const { absolutePath } = await resolveUploadSource({ requestedPath: sourcePath, side: uploadSide });
+      const buffer = await readFile(absolutePath);
+      const name = filename || basename(absolutePath);
+      const file = new File([buffer], name);
+      // X-Atlassian-Token: nocheck is required for multipart attachment POSTs (XSRF bypass).
+      // Set it only for the duration of this call; restore afterwards.
+      const prevHeaders = OpenAPI.HEADERS;
+      OpenAPI.HEADERS = { 'X-Atlassian-Token': 'nocheck' };
+      try {
+        if (versionIfExists) {
+          const existing = await AttachmentsService.getAttachments(contentId, undefined, name);
+          const existingId = (existing as any)?.results?.[0]?.id;
+          if (existingId) {
+            // MockAttachmentRequest types file as string, but getFormData handles Blob/File via isBlob()
+            return await AttachmentsService.updateData(existingId, contentId, { file } as any);
+          }
         }
-      }
-      // MockAttachmentRequest types file as string, but getFormData in request.ts handles Blob/File via isBlob()
-      const formData = { file, comment, minorEdit, hidden } as any;
-      return await handleApiOperation(
-        () => AttachmentsService.createAttachments(
+        // MockAttachmentRequest types file as string, but getFormData in request.ts handles Blob/File via isBlob()
+        const formData = { file, comment, minorEdit, hidden } as any;
+        return await AttachmentsService.createAttachments(
           contentId,
           undefined,
           allowDuplicated ? 'true' : undefined,
           undefined,
           formData,
-        ),
-        'Error uploading attachment',
-      );
-    } finally {
-      OpenAPI.HEADERS = prevHeaders;
-    }
+        );
+      } finally {
+        OpenAPI.HEADERS = prevHeaders;
+      }
+    }, 'Error uploading attachment');
   }
 
   /**
    * Download one or more attachments from a Confluence content entity.
-   * @param contentId The ID of the content the attachment(s) are on
-   * @param filename If provided, download only the attachment with this exact filename; otherwise download all attachments on the content
-   * @param options Save-to-disk and inline-content options (see AttachmentDownloadOptions)
+   * @param params.contentId The ID of the content the attachment(s) are on
+   * @param params.filename If provided, download only the attachment with this exact filename; otherwise download all attachments on the content
+   * @param params.save Whether to write the attachment(s) to the operator-configured download directory
+   * @param params.saveName Optional file name (basename only) when saving a single attachment
+   * @param params.returnContent Whether/how to embed the bytes inline in the response
+   * @param params.maxInlineBytes Inline embedding cap
+   * @param params.downloadSide Resolved download gateway (roots, size limit, enabled flag)
    */
-  async downloadAttachmentFromContent(
-    contentId: string,
-    filename?: string,
-    options?: AttachmentDownloadOptions,
-  ) {
+  async downloadAttachmentFromContent(params: {
+    contentId: string;
+    filename?: string;
+    save?: boolean;
+    saveName?: string;
+    returnContent?: AttachmentContentEncoding;
+    maxInlineBytes?: number;
+    downloadSide: AttachmentGatewaySide;
+  }) {
     return handleApiOperation(async () => {
-      const list = await AttachmentsService.getAttachments(contentId, undefined, filename);
+      if (params.save && !params.downloadSide.enabled) {
+        throw new Error(
+          'Saving attachments to disk is disabled on this server. Enable it with ' +
+            'CONFLUENCE_ATTACHMENTS_DOWNLOAD_ENABLED and configure a download directory.',
+        );
+      }
+      const list = await AttachmentsService.getAttachments(params.contentId, undefined, params.filename);
       const results = ((list as any)?.results ?? []) as Array<any>;
       if (results.length === 0) {
         throw new Error(
-          filename
-            ? `No attachment named "${filename}" found on content ${contentId}`
-            : `No attachments found on content ${contentId}`,
+          params.filename
+            ? `No attachment named "${params.filename}" found on content ${params.contentId}`
+            : `No attachments found on content ${params.contentId}`,
         );
       }
 
-      const targets = filename ? [results[0]] : results;
+      const targets = params.filename ? [results[0]] : results;
+      const multiple = targets.length > 1;
       const attachments = [];
       for (const attachment of targets) {
         const downloadLink = attachment?._links?.download;
         if (!downloadLink) {
-          throw new Error(`Attachment "${attachment?.title ?? filename}" has no download link`);
+          throw new Error(`Attachment "${attachment?.title ?? params.filename}" has no download link`);
         }
-        const name = attachment?.title ?? filename ?? 'attachment';
+        const name = attachment?.title ?? params.filename ?? 'attachment';
         const mediaType = attachment?.metadata?.mediaType ?? attachment?.extensions?.mediaType;
+        let destination: string | undefined;
+        if (params.save) {
+          const requestedName = multiple ? name : params.saveName ?? name;
+          destination = await resolveDownloadDestination({ requestedName, side: params.downloadSide });
+        }
         attachments.push(
           await downloadAttachment({
             url: this.buildDownloadUrl(downloadLink),
             token: this.tokenProvider,
             filename: name,
             mediaType,
-            options,
+            options: {
+              destination,
+              returnContent: params.returnContent,
+              maxInlineBytes: params.maxInlineBytes,
+              maxDownloadBytes: params.downloadSide.maxBytes,
+            },
           }),
         );
       }
 
-      return { contentId, count: attachments.length, attachments };
+      return { contentId: params.contentId, count: attachments.length, attachments };
     }, 'Error downloading attachment');
   }
 
@@ -326,8 +358,8 @@ export const confluenceToolSchemas = {
   },
   uploadAttachment: {
     contentId: z.string().describe("ID of the Confluence content (page) to attach the file to"),
-    filePath: z.string().describe("Absolute local filesystem path of the file to upload"),
-    filename: z.string().optional().describe("Override for the attachment filename (defaults to the basename of filePath)"),
+    sourcePath: z.string().describe("Path to the file to upload, relative to a server-configured attachment upload directory. Absolute paths and '..' segments are rejected; symlinks and non-regular files are refused."),
+    filename: z.string().optional().describe("Override for the attachment filename (defaults to the basename of sourcePath)"),
     comment: z.string().optional().describe("Optional comment describing the attachment"),
     minorEdit: z.boolean().optional().describe("If true, no notification email is sent to watchers"),
     hidden: z.boolean().optional().describe("If true, no notification email or activity stream entry is generated"),
@@ -337,9 +369,11 @@ export const confluenceToolSchemas = {
   downloadAttachment: {
     contentId: z.string().describe("ID of the Confluence content (page) whose attachment(s) to download"),
     filename: z.string().optional().describe("Exact filename of a single attachment to download. If omitted, all attachments on the content are downloaded."),
-    saveDir: z.string().optional().describe("Absolute local directory to save the attachment(s) into. The attachment filename is used as the file name. Preferred when downloading multiple files."),
-    savePath: z.string().optional().describe("Absolute local file path to save a single attachment to. Overrides saveDir. Only meaningful when downloading a single attachment."),
-    returnContent: z.enum(['none', 'base64', 'text']).optional().describe("Whether to embed the file bytes in the response: 'none' (default), 'base64' for binary, or 'text' for UTF-8 text. Combine with saveDir/savePath to also save to disk."),
-    maxInlineBytes: z.number().optional().describe("Maximum bytes to embed inline when returnContent is base64/text. Larger files are saved (if a path is given) but not embedded. Defaults to 1 MiB.")
+    returnContent: z.enum(['none', 'base64', 'text']).optional().describe("Whether to embed the file bytes in the response: 'none' (default), 'base64' for binary, or 'text' for UTF-8 text."),
+    maxInlineBytes: z.number().optional().describe("Maximum bytes to embed inline when returnContent is base64/text. Larger files are omitted from the inline content. Defaults to 1 MiB.")
+  },
+  downloadAttachmentSaveFields: {
+    save: z.boolean().optional().describe("Save the attachment(s) into the server-configured download directory. Requires disk downloads to be enabled on the server."),
+    saveName: z.string().optional().describe("Optional file name (no directories) to use when saving a single attachment; defaults to the attachment's own name. Existing files are never overwritten.")
   }
 };
