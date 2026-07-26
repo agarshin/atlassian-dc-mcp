@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.29.0](https://github.com/b1ff/atlassian-dc-mcp/compare/v0.28.0...v0.29.0) (2026-07-26)
+
+
+### Features
+
+* add confluence_uploadAttachment tool ([b73cf9e](https://github.com/b1ff/atlassian-dc-mcp/commit/b73cf9ef1e296ca6639bf2a3f162d3f142115019))
+* **attachments:** sandbox local filesystem access behind an opt-in gateway ([5cc1776](https://github.com/b1ff/atlassian-dc-mcp/commit/5cc177632d1441e1a644cb9db7396fbb9b754fe6))
+* **confluence:** add confluence_downloadAttachment tool ([aae8aab](https://github.com/b1ff/atlassian-dc-mcp/commit/aae8aabd43602aece8da98c13a8052805ba0d14d))
+* **confluence:** add versionIfExists flag to uploadAttachment ([1e0453f](https://github.com/b1ff/atlassian-dc-mcp/commit/1e0453fa01d984939def34a3da8a37927e13f4fe))
+
+
+
+
+
 # [0.28.0](https://github.com/b1ff/atlassian-dc-mcp/compare/v0.27.0...v0.28.0) (2026-07-22)
 
 **Note:** Version bump only for package @atlassian-dc-mcp/confluence
