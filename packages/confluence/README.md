@@ -103,6 +103,37 @@ Available flags: `--host`/`-H`, `--api-base-path`/`-b`, `--token`/`-t`, `--defau
 
    See [Configuration sources](#configuration-sources) for the full precedence chain.
 
+   ### Attachment filesystem access (opt-in)
+
+   By default this server is an API-only client: the attachment tools never read from or write to the local filesystem, and `confluence_uploadAttachment` is **not even registered**. `confluence_downloadAttachment` is always available but can only return file bytes inline (base64/text) — it cannot touch local disk.
+
+   Local filesystem access is opt-in and confined to operator-configured directories that the model cannot choose:
+
+   ```
+   # Enable each direction separately (default: false)
+   CONFLUENCE_ATTACHMENTS_UPLOAD_ENABLED=true
+   CONFLUENCE_ATTACHMENTS_DOWNLOAD_ENABLED=true
+
+   # Allowed roots (os path-separator list). Uploads may only read from these,
+   # downloads may only write into the first configured download root.
+   CONFLUENCE_ATTACHMENTS_UPLOAD_ROOTS=/srv/confluence-exchange/in
+   CONFLUENCE_ATTACHMENTS_DOWNLOAD_ROOTS=/srv/confluence-exchange/out
+
+   # Convenience: a single dedicated exchange directory used as both roots
+   CONFLUENCE_ATTACHMENTS_DIR=/srv/confluence-exchange
+
+   # Hard per-file size limits in bytes (default: 25 MiB)
+   CONFLUENCE_ATTACHMENTS_MAX_UPLOAD_BYTES=26214400
+   CONFLUENCE_ATTACHMENTS_MAX_DOWNLOAD_BYTES=26214400
+   ```
+
+   Guardrails applied when enabled:
+   - A direction only activates when its flag is set **and** at least one root resolves; otherwise the tool stays disabled and a warning is logged.
+   - Roots are canonicalized (realpath) at startup. Requested paths are relative to a root; absolute paths and `..` segments are rejected, and a path that escapes a root through a symlinked directory is refused.
+   - Uploads reject symlinks and non-regular files (FIFOs, devices, directories).
+   - Downloads never overwrite an existing file (including a symlink) — they use an exclusive write.
+   - Both directions enforce the configured hard size limit.
+
    To create a personal access token:
    - In Confluence, select your profile picture at the top right
    - Select **Settings** > **Personal Access Tokens**
@@ -209,3 +240,29 @@ Parameters:
 - `start` (number, optional): Start index for pagination
 - `expand` (string, optional): Comma-separated list of properties to expand
 - `excerpt` (`none` | `highlight`, optional): Excerpt mode for search results. Defaults to `none`.
+
+#### 6. confluence_uploadAttachment
+
+Upload a local file as an attachment to a Confluence content (page). Only registered when filesystem uploads are enabled (see [Attachment filesystem access](#attachment-filesystem-access-opt-in)).
+
+Parameters:
+- `contentId` (string, required): ID of the content (page) to attach the file to
+- `sourcePath` (string, required): Path to the file to upload, **relative to a server-configured upload directory**. Absolute paths and `..` segments are rejected; symlinks and non-regular files are refused.
+- `filename` (string, optional): Override for the attachment filename (defaults to the basename of `sourcePath`)
+- `comment` (string, optional): Comment describing the attachment
+- `minorEdit` (boolean, optional): If true, no notification email is sent to watchers
+- `hidden` (boolean, optional): If true, no notification email or activity stream entry is generated
+- `allowDuplicated` (boolean, optional): Allow upload even if an attachment with the same filename already exists
+- `versionIfExists` (boolean, optional): If true and an attachment with the same filename already exists, upload as a new version instead of failing
+
+#### 7. confluence_downloadAttachment
+
+Download one or more attachments from a Confluence content (page). Returns the file content inline (base64 or text) — useful for inspecting a file or moving it elsewhere (e.g. re-uploading to a Jira issue). When filesystem downloads are enabled (see [Attachment filesystem access](#attachment-filesystem-access-opt-in)), it can also save into the server-configured download directory.
+
+Parameters:
+- `contentId` (string, required): ID of the content (page) whose attachment(s) to download
+- `filename` (string, optional): Exact filename of a single attachment to download. If omitted, all attachments on the content are downloaded.
+- `returnContent` (`none` | `base64` | `text`, optional): Whether to embed the file bytes in the response. Defaults to `none`.
+- `maxInlineBytes` (number, optional): Maximum bytes to embed inline when `returnContent` is `base64`/`text`. Larger files are omitted from the inline content. Defaults to 1 MiB.
+- `save` (boolean, optional): Save the attachment(s) into the server-configured download directory. Requires filesystem downloads to be enabled; existing files are never overwritten. *(Only available when downloads are enabled.)*
+- `saveName` (string, optional): File name (no directories) to use when saving a single attachment; defaults to the attachment's own name. *(Only available when downloads are enabled.)*
