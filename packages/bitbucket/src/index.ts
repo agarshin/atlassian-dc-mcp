@@ -1,6 +1,7 @@
 import { connectServer, createMcpServer, formatToolResponse, initializeRuntimeConfig } from '@atlassian-dc-mcp/common';
 import { BitbucketService, bitbucketToolSchemas } from './bitbucket-service.js';
 import { getBitbucketRuntimeConfig, getDefaultPageSize } from './config.js';
+import { resolveMergeGateway } from './merge-gateway.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -187,6 +188,44 @@ server.tool(
     return formatToolResponse(result);
   }
 );
+
+server.tool(
+  "bitbucket_canMergePullRequest",
+  "Check whether a pull request can be merged. Read-only: returns canMerge, whether the pull request is conflicted, and any merge-check vetoes (e.g. missing approvals, unresolved tasks, failed builds). Use this before bitbucket_mergePullRequest to see what is blocking a merge.",
+  bitbucketToolSchemas.canMergePullRequest,
+  async ({ projectKey, repositorySlug, pullRequestId }) => {
+    const result = await bitbucketService.getPullRequestMergeability(projectKey, repositorySlug, pullRequestId);
+    return formatToolResponse(result);
+  }
+);
+
+const mergeGateway = resolveMergeGateway();
+
+// Merging lands code on a shared branch and cannot be undone through the API, so the tool is
+// only registered when the operator has explicitly enabled it for specific repositories.
+if (mergeGateway.enabled) {
+  const scope = `Allowed on this server: ${mergeGateway.repos.join(', ')}`
+    + (mergeGateway.targetRefs.length > 0 ? `; target branches: ${mergeGateway.targetRefs.join(', ')}` : '')
+    + '.';
+  server.tool(
+    "bitbucket_mergePullRequest",
+    `Merge a pull request. IMPORTANT: you MUST first call bitbucket_getPullRequest to get the current 'version' — it is required for optimistic locking and a stale version is rejected. The merge is refused if the pull request is conflicted or a merge check vetoes it; use bitbucket_canMergePullRequest to inspect blockers first. This operation is not reversible through the API. ${scope}`,
+    bitbucketToolSchemas.mergePullRequest,
+    async ({ projectKey, repositorySlug, pullRequestId, version, strategyId, message, output }) => {
+      const result = await bitbucketService.mergePullRequest({
+        projectKey,
+        repositorySlug,
+        pullRequestId,
+        version,
+        strategyId,
+        message,
+        output,
+        gateway: mergeGateway,
+      });
+      return formatToolResponse(result);
+    }
+  );
+}
 
 server.tool(
   "bitbucket_getRequiredReviewers",
