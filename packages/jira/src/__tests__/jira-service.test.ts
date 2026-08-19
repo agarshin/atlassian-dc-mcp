@@ -19,6 +19,7 @@ jest.mock('../jira-client/index.js', () => ({
     createIssue: jest.fn(),
     getComments: jest.fn(),
     addComment: jest.fn(),
+    updateComment: jest.fn(),
   },
   SearchService: {
     searchUsingSearchRequest: jest.fn(),
@@ -194,6 +195,28 @@ describe('JiraService', () => {
       await jiraService.getIssueComments(mockIssueKey, 'renderedBody', 10, 20);
 
       expect(IssueService.getComments).toHaveBeenCalledWith(mockIssueKey, 'renderedBody', '10', undefined, '20');
+    });
+  });
+
+  describe('updateIssueComment', () => {
+    it('sends the new body to the addressed comment', async () => {
+      const mockComment = { id: '10500', body: 'Updated body' };
+      (IssueService.updateComment as jest.Mock).mockResolvedValue(mockComment);
+
+      const result = await jiraService.updateIssueComment(mockIssueKey, '10500', 'Updated body');
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBe(mockComment);
+      expect(IssueService.updateComment).toHaveBeenCalledWith(mockIssueKey, '10500', undefined, { body: 'Updated body' });
+    });
+
+    it('surfaces update errors gracefully', async () => {
+      (IssueService.updateComment as jest.Mock).mockRejectedValue(new Error('You do not have permission to edit this comment'));
+
+      const result = await jiraService.updateIssueComment(mockIssueKey, '10500', 'Updated body');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('You do not have permission to edit this comment');
     });
   });
 
