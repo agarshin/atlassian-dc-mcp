@@ -148,6 +148,7 @@ interface SimplifiedComment {
   comments: SimplifiedComment[];
   threadResolved: boolean;
   state: string;
+  severity: string;
 }
 
 interface SimplifiedActivity {
@@ -271,7 +272,8 @@ function simplifyComment(comment: Comment, ancestorIds: Set<number> = new Set())
       .filter(childComment => !nextAncestorIds.has(childComment.id))
       .map(childComment => simplifyComment(childComment, nextAncestorIds)),
     threadResolved: comment.threadResolved,
-    state: comment.state
+    state: comment.state,
+    severity: comment.severity
   };
 }
 

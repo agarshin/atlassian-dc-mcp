@@ -107,6 +107,7 @@ export function shapePullRequestCommentAck(comment: any): Record<string, any> {
     ...(comment?.parent?.id !== undefined ? { parentId: comment.parent.id } : {}),
     ...(typeof comment?.state === 'string' ? { state: comment.state } : {}),
     ...(typeof comment?.threadResolved === 'boolean' ? { threadResolved: comment.threadResolved } : {}),
+    ...(typeof comment?.severity === 'string' ? { severity: comment.severity } : {}),
     pending: comment?.state === 'PENDING',
     ...(typeof comment?.anchor?.path === 'string'
       ? {

@@ -2166,7 +2166,7 @@ describe('BitbucketService', () => {
       const mockComment = { id: 502, version: 4, text: 'New body', state: 'RESOLVED', severity: 'BLOCKER' };
       (PullRequestsService.updateComment2 as jest.Mock).mockResolvedValue(mockComment);
 
-      await bitbucketService.updatePullRequestComment(
+      const result = await bitbucketService.updatePullRequestComment(
         mockProjectKey,
         mockRepositorySlug,
         mockPullRequestId,
@@ -2184,6 +2184,7 @@ describe('BitbucketService', () => {
         mockRepositorySlug,
         { version: 3, text: 'New body', state: 'RESOLVED', severity: 'BLOCKER' }
       );
+      expect(result.data).toMatchObject({ state: 'RESOLVED', severity: 'BLOCKER' });
     });
 
     it('should resolve a comment thread by sending threadResolved true', async () => {
