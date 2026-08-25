@@ -168,6 +168,8 @@ export interface SimplifiedPRResponse {
     prAuthor?: SimplifiedUser;
     commentCount: number;
     unresolvedCount: number;
+    blockerCount: number;
+    unresolvedBlockerCount: number;
   };
 }
 
@@ -363,9 +365,11 @@ export function simplifyBitbucketPRComments(
   // Find PR author (usually the one who OPENED the PR)
   const prAuthor = activities.find(a => a.action === 'OPENED')?.user;
 
-  // Count comments and unresolved threads
+  // Count comments, unresolved threads and blocker tasks
   const comments = activities.filter(a => a.action === 'COMMENTED' && a.comment);
   const unresolvedCount = comments.filter(a => a.comment && !a.comment.threadResolved).length;
+  const blockers = comments.filter(a => a.comment && a.comment.severity === 'BLOCKER');
+  const unresolvedBlockerCount = blockers.filter(a => a.comment && a.comment.state !== 'RESOLVED').length;
 
   return {
     isLastPage: filteredResponse.isLastPage ?? true,
@@ -374,7 +378,9 @@ export function simplifyBitbucketPRComments(
       totalActivities: activities.length,
       ...(prAuthor && { prAuthor }),
       commentCount: comments.length,
-      unresolvedCount
+      unresolvedCount,
+      blockerCount: blockers.length,
+      unresolvedBlockerCount
     }
   };
 }

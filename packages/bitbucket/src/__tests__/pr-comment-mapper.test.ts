@@ -161,7 +161,9 @@ describe('PR Comment Mapper', () => {
             displayName: "User B"
           },
           commentCount: 1,
-          unresolvedCount: 1
+          unresolvedCount: 1,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 
@@ -198,6 +200,44 @@ describe('PR Comment Mapper', () => {
       const result = simplifyBitbucketPRComments(blockerResponse) as SimplifiedPRResponse;
       expect(result.activities[0].comment?.severity).toBe('BLOCKER');
       expect(result.activities[0].comment?.comments[0].severity).toBe('NORMAL');
+    });
+
+    it('should count blockers and unresolved blockers by task state in the summary', () => {
+      const blockerResponse: BitbucketPRApiResponse = {
+        ...validPRResponse,
+        values: [
+          openedActivity!,
+          {
+            id: 1010,
+            createdDate: 1600000003000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2020, text: 'Unresolved task', severity: 'BLOCKER', state: 'OPEN' })
+          },
+          {
+            id: 1011,
+            createdDate: 1600000004000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2021, text: 'Ticked task', severity: 'BLOCKER', state: 'RESOLVED' })
+          },
+          {
+            id: 1012,
+            createdDate: 1600000005000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2022, text: 'Just a note', severity: 'NORMAL', state: 'OPEN' })
+          }
+        ]
+      };
+
+      const result = simplifyBitbucketPRComments(blockerResponse) as SimplifiedPRResponse;
+      expect(result.summary.commentCount).toBe(3);
+      expect(result.summary.blockerCount).toBe(2);
+      expect(result.summary.unresolvedBlockerCount).toBe(1);
     });
 
     it('should preserve nested replies recursively', () => {
@@ -505,7 +545,9 @@ describe('PR Comment Mapper', () => {
         summary: {
           totalActivities: 0,
           commentCount: 0,
-          unresolvedCount: 0
+          unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 
@@ -529,7 +571,9 @@ describe('PR Comment Mapper', () => {
         summary: {
           totalActivities: 0,
           commentCount: 0,
-          unresolvedCount: 0
+          unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 

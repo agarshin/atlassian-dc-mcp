@@ -52,6 +52,8 @@ export function shapePullRequestCommentsResponse(
           totalActivities: Array.isArray(filteredResponse.values) ? filteredResponse.values.length : 0,
           commentCount: getCommentSummary(filteredResponse, options).length,
           unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
     items: getCommentSummary(filteredResponse, options),
   };

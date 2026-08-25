@@ -152,6 +152,8 @@ describe('BitbucketService token optimization paths', () => {
           prAuthor: { name: 'author', displayName: 'Author' },
           commentCount: 1,
           unresolvedCount: 1,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
       });
       expect(PullRequestsService.getActivities).toHaveBeenCalledWith('TEST', '123', 'repo', undefined, undefined, undefined, 25);
@@ -203,6 +205,8 @@ describe('BitbucketService token optimization paths', () => {
           prAuthor: { name: 'author', displayName: 'Author' },
           commentCount: 0,
           unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
       });
       expect(includeResolvedResult.success).toBe(true);
@@ -253,6 +257,8 @@ describe('BitbucketService token optimization paths', () => {
           prAuthor: { name: 'author', displayName: 'Author' },
           commentCount: 1,
           unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
       });
     });
@@ -270,6 +276,8 @@ describe('BitbucketService token optimization paths', () => {
           prAuthor: { name: 'author', displayName: 'Author' },
           commentCount: 1,
           unresolvedCount: 1,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
         items: ['Reviewer on src/app.ts:10: Looks good'],
       });
