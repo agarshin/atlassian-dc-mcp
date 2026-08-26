@@ -114,6 +114,7 @@ Alternatively, you can use `BITBUCKET_API_BASE_PATH` instead of `BITBUCKET_HOST`
 - Get file contents
 - Browse branches and commits
 - Get pull request information
+- Check pull request mergeability, and merge pull requests when the operator enables it
 - Search and filter repositories
 
 ## Setup
@@ -136,6 +137,33 @@ Alternatively, you can use `BITBUCKET_API_BASE_PATH` instead of `BITBUCKET_HOST`
    ```
 
    See [Configuration sources](#configuration-sources) for the full precedence chain.
+
+   ### Merging pull requests (opt-in)
+
+   Merging lands code on a shared branch and cannot be undone through the API, so `bitbucket_mergePullRequest` is **not even registered** by default. `bitbucket_canMergePullRequest` is always available — it is read-only and only reports what is blocking a merge.
+
+   Merging is opt-in and confined to repositories the operator names; the model cannot choose or widen the scope:
+
+   ```
+   # Enable merging (default: false)
+   BITBUCKET_MERGE_ENABLED=true
+
+   # Required: repositories that may be merged, as "PROJECT/repository-slug".
+   # A "PROJECT/*" entry allows every repository in that project. Comma-separated.
+   BITBUCKET_MERGE_ALLOWED_REPOS=PROJ/demo,SANDBOX/*
+
+   # Optional: restrict which branches may be merged into. A trailing "*" matches a
+   # prefix; bare names are expanded to refs/heads/<name>. Omit to allow any branch
+   # in the allowed repositories.
+   BITBUCKET_MERGE_ALLOWED_TARGET_REFS=develop,refs/heads/release/*
+   ```
+
+   Guardrails applied when enabled:
+   - The tool only activates when the flag is set **and** at least one valid repository entry resolves; otherwise it stays unregistered and a warning is logged. Malformed entries (and a `*/*` catch-all) are rejected individually.
+   - Every request is checked against the allowlist before any API call — repository first, then the pull request's target branch when target refs are restricted.
+   - `version` is a required parameter (optimistic locking). Bitbucket rejects a stale version, so a pull request that changed after you inspected it cannot be merged by accident.
+   - The mergeability check runs before the merge: a conflicted or veto-blocked pull request (missing approvals, unresolved tasks, failed builds) is refused without issuing the write, and the veto reasons are returned.
+   - Auto-merge (queuing a merge until checks pass) is not exposed.
 
    To create a personal access token:
   - In Bitbucket, select your profile picture at the bottom left
@@ -228,8 +256,32 @@ Parameters:
 - `limit` (number, optional): Maximum number of results to return. Defaults to `BITBUCKET_DEFAULT_PAGE_SIZE` or `25`.
 - `start` (number, optional): Starting index for pagination
 
+#### 7. bitbucket_canMergePullRequest
+
+Check whether a pull request can be merged. Read-only — always available.
+
+Parameters:
+- `projectKey` (string, required): The project key
+- `repositorySlug` (string, required): The repository slug
+- `pullRequestId` (string, required): The pull request ID
+
+Returns `canMerge`, `conflicted`, `outcome`, and `vetoes` (each with a `summary` and `detail`) so you can see what is blocking a merge.
+
+#### 8. bitbucket_mergePullRequest
+
+Merge a pull request. Only registered when merging is enabled for the server — see [Merging pull requests (opt-in)](#merging-pull-requests-opt-in).
+
+Parameters:
+- `projectKey` (string, required): The project key
+- `repositorySlug` (string, required): The repository slug
+- `pullRequestId` (string, required): The pull request ID
+- `version` (number, required): The current pull request version, from `bitbucket_getPullRequest`. A stale version is rejected by the server.
+- `strategyId` (string, optional): Merge strategy id, e.g. `no-ff`, `ff`, `ff-only`, `rebase-no-ff`, `rebase-ff-only`, `squash`, `squash-ff-only`. Defaults to the repository's configured strategy.
+- `message` (string, optional): Merge commit message. Defaults to Bitbucket's generated message.
+- `output` (string, optional): `ack` (default) or `full`
+
 ## Response Shaping
 
 - Paginated read tools use `BITBUCKET_DEFAULT_PAGE_SIZE` when `limit` is omitted.
 - `bitbucket_getPR_CommentsAndAction` and `bitbucket_getPullRequestChanges` support `output=summary|compact|full`. The default is `compact`.
-- `bitbucket_postPullRequestComment`, `bitbucket_createPullRequest`, and `bitbucket_updatePullRequest` support `output=ack|full`. The default is `ack`.
+- `bitbucket_postPullRequestComment`, `bitbucket_createPullRequest`, `bitbucket_updatePullRequest`, and `bitbucket_mergePullRequest` support `output=ack|full`. The default is `ack`.

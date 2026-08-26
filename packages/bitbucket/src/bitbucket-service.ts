@@ -4,6 +4,7 @@ import { request as __request } from './bitbucket-client/core/request.js';
 import { handleApiOperation, resolveOpenApiBase } from '@atlassian-dc-mcp/common';
 import { simplifyInboxPullRequests } from './inbox-pr-mapper.js';
 import { BITBUCKET_PRODUCT, getDefaultPageSize, getMissingConfig } from './config.js';
+import { fetchMergeability, mergePullRequest, type MergePullRequestParams } from './pr-merge.js';
 import {
   BitbucketMutationOutputMode,
   BitbucketOutputMode,
@@ -527,6 +528,36 @@ export class BitbucketService {
     }
 
     return result;
+  }
+
+  /**
+   * Check whether a pull request can be merged. Read-only: reports conflicts and any
+   * merge-check vetoes without changing anything.
+   * @param projectKey The project key
+   * @param repositorySlug The repository slug
+   * @param pullRequestId The pull request ID
+   * @returns Promise with the mergeability status
+   */
+  async getPullRequestMergeability(projectKey: string, repositorySlug: string, pullRequestId: string) {
+    return fetchMergeability(projectKey.toUpperCase(), repositorySlug.toLowerCase(), pullRequestId);
+  }
+
+  /**
+   * Merge a pull request. Only permitted for repositories (and target branches) the operator
+   * allowed through the merge gateway; see merge-gateway.ts. A conflicted or vetoed pull
+   * request is refused before the merge request is sent.
+   * @param params.version The current pull request version, required for optimistic locking
+   * @param params.strategyId Optional merge strategy id (e.g. 'no-ff', 'squash', 'ff')
+   * @param params.message Optional merge commit message
+   * @param params.gateway The resolved operator merge policy
+   * @returns Promise with the merged pull request
+   */
+  async mergePullRequest(params: MergePullRequestParams) {
+    return mergePullRequest({
+      ...params,
+      projectKey: params.projectKey.toUpperCase(),
+      repositorySlug: params.repositorySlug.toLowerCase(),
+    });
   }
 
   /**
@@ -1091,6 +1122,20 @@ export const bitbucketToolSchemas = {
     description: z.string().optional().describe("The new description for the pull request"),
     draft: z.boolean().optional().describe("If provided, sets the draft (work-in-progress) status of the pull request. Pass true to mark as draft, false to mark as ready for review."),
     reviewers: z.array(z.string()).optional().describe("Optional array of reviewer usernames to set (use the 'name' field from Bitbucket user objects, not 'slug')"),
+    output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
+  },
+  canMergePullRequest: {
+    projectKey: z.string().describe("The project key"),
+    repositorySlug: z.string().describe("The repository slug"),
+    pullRequestId: z.string().describe("The pull request ID")
+  },
+  mergePullRequest: {
+    projectKey: z.string().describe("The project key"),
+    repositorySlug: z.string().describe("The repository slug"),
+    pullRequestId: z.string().describe("The pull request ID"),
+    version: z.number().describe("The current version of the pull request (required for optimistic locking). Fetch it with bitbucket_getPullRequest immediately before merging — the server rejects a stale version, which is what stops a merge of code you have not seen."),
+    strategyId: z.string().optional().describe("Merge strategy id, e.g. 'no-ff', 'ff', 'ff-only', 'rebase-no-ff', 'rebase-ff-only', 'squash', 'squash-ff-only'. Omit to use the strategy configured for the repository."),
+    message: z.string().optional().describe("Commit message for the merge commit. Omit to let Bitbucket generate it."),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   getRequiredReviewers: {

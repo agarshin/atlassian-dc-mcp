@@ -102,6 +102,29 @@ export function shapePullRequestAck(pullRequest: any): Record<string, any> {
   };
 }
 
+export interface MergeVeto {
+  summary?: string;
+  detail?: string;
+}
+
+export function shapeMergeability(mergeability: any): {
+  canMerge: boolean;
+  conflicted: boolean;
+  outcome?: string;
+  vetoes: MergeVeto[];
+} {
+  const vetoes = Array.isArray(mergeability?.vetoes) ? mergeability.vetoes : [];
+  return {
+    canMerge: mergeability?.canMerge === true,
+    conflicted: mergeability?.conflicted === true,
+    ...(typeof mergeability?.outcome === 'string' ? { outcome: mergeability.outcome } : {}),
+    vetoes: vetoes.map((veto: any) => ({
+      ...(typeof veto?.summaryMessage === 'string' ? { summary: veto.summaryMessage } : {}),
+      ...(typeof veto?.detailedMessage === 'string' ? { detail: veto.detailedMessage } : {}),
+    })),
+  };
+}
+
 export function shapePullRequestCommentAck(comment: any): Record<string, any> {
   const link = getLink(comment?.links);
   return {
