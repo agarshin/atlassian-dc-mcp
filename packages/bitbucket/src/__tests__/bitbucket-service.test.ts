@@ -2166,7 +2166,7 @@ describe('BitbucketService', () => {
       const mockComment = { id: 502, version: 4, text: 'New body', state: 'RESOLVED', severity: 'BLOCKER' };
       (PullRequestsService.updateComment2 as jest.Mock).mockResolvedValue(mockComment);
 
-      await bitbucketService.updatePullRequestComment(
+      const result = await bitbucketService.updatePullRequestComment(
         mockProjectKey,
         mockRepositorySlug,
         mockPullRequestId,
@@ -2183,6 +2183,83 @@ describe('BitbucketService', () => {
         mockPullRequestId,
         mockRepositorySlug,
         { version: 3, text: 'New body', state: 'RESOLVED', severity: 'BLOCKER' }
+      );
+      expect(result.data).toMatchObject({ state: 'RESOLVED', severity: 'BLOCKER' });
+    });
+
+    it('should resolve a comment thread by sending threadResolved true', async () => {
+      const mockComment = { id: 504, version: 3, state: 'OPEN', threadResolved: true };
+      (PullRequestsService.updateComment2 as jest.Mock).mockResolvedValue(mockComment);
+
+      const result = await bitbucketService.updatePullRequestComment(
+        mockProjectKey,
+        mockRepositorySlug,
+        mockPullRequestId,
+        '504',
+        2,
+        undefined,  // text
+        undefined,  // state
+        undefined,  // severity
+        true        // threadResolved
+      );
+
+      expect(PullRequestsService.updateComment2).toHaveBeenCalledWith(
+        mockProjectKey,
+        '504',
+        mockPullRequestId,
+        mockRepositorySlug,
+        { version: 2, threadResolved: true }
+      );
+      expect(result.data).toMatchObject({ state: 'OPEN', threadResolved: true });
+    });
+
+    it('should reopen a comment thread by sending threadResolved false', async () => {
+      const mockComment = { id: 505, version: 4, threadResolved: false };
+      (PullRequestsService.updateComment2 as jest.Mock).mockResolvedValue(mockComment);
+
+      await bitbucketService.updatePullRequestComment(
+        mockProjectKey,
+        mockRepositorySlug,
+        mockPullRequestId,
+        '505',
+        3,
+        undefined,
+        undefined,
+        undefined,
+        false
+      );
+
+      expect(PullRequestsService.updateComment2).toHaveBeenCalledWith(
+        mockProjectKey,
+        '505',
+        mockPullRequestId,
+        mockRepositorySlug,
+        { version: 3, threadResolved: false }
+      );
+    });
+
+    it('should set task state and thread resolution independently in one update', async () => {
+      const mockComment = { id: 506, version: 5, state: 'OPEN', threadResolved: true };
+      (PullRequestsService.updateComment2 as jest.Mock).mockResolvedValue(mockComment);
+
+      await bitbucketService.updatePullRequestComment(
+        mockProjectKey,
+        mockRepositorySlug,
+        mockPullRequestId,
+        '506',
+        4,
+        undefined,
+        'OPEN',
+        undefined,
+        true
+      );
+
+      expect(PullRequestsService.updateComment2).toHaveBeenCalledWith(
+        mockProjectKey,
+        '506',
+        mockPullRequestId,
+        mockRepositorySlug,
+        { version: 4, state: 'OPEN', threadResolved: true }
       );
     });
 

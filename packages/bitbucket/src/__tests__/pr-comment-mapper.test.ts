@@ -140,7 +140,8 @@ describe('PR Comment Mapper', () => {
               },
               comments: [],
               threadResolved: false,
-              state: "OPEN"
+              state: "OPEN",
+              severity: "NORMAL"
             }
           },
           {
@@ -160,11 +161,83 @@ describe('PR Comment Mapper', () => {
             displayName: "User B"
           },
           commentCount: 1,
-          unresolvedCount: 1
+          unresolvedCount: 1,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 
       expect(result).toEqual(expectedResult);
+    });
+
+    it('should expose BLOCKER severity so tasks are distinguishable from normal comments', () => {
+      const blockerResponse: BitbucketPRApiResponse = {
+        ...validPRResponse,
+        values: [
+          {
+            id: 1001,
+            createdDate: 1600000000000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({
+              id: 2010,
+              text: 'Blocking: fix this',
+              severity: 'BLOCKER',
+              comments: [
+                createComment({
+                  id: 2011,
+                  text: 'Reply keeps its own severity',
+                  anchor: undefined,
+                  severity: 'NORMAL'
+                })
+              ]
+            })
+          }
+        ]
+      };
+
+      const result = simplifyBitbucketPRComments(blockerResponse) as SimplifiedPRResponse;
+      expect(result.activities[0].comment?.severity).toBe('BLOCKER');
+      expect(result.activities[0].comment?.comments[0].severity).toBe('NORMAL');
+    });
+
+    it('should count blockers and unresolved blockers by task state in the summary', () => {
+      const blockerResponse: BitbucketPRApiResponse = {
+        ...validPRResponse,
+        values: [
+          openedActivity!,
+          {
+            id: 1010,
+            createdDate: 1600000003000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2020, text: 'Unresolved task', severity: 'BLOCKER', state: 'OPEN' })
+          },
+          {
+            id: 1011,
+            createdDate: 1600000004000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2021, text: 'Ticked task', severity: 'BLOCKER', state: 'RESOLVED' })
+          },
+          {
+            id: 1012,
+            createdDate: 1600000005000,
+            user: createUser('reviewer1', 106, 'Reviewer One'),
+            action: 'COMMENTED',
+            commentAction: 'ADDED',
+            comment: createComment({ id: 2022, text: 'Just a note', severity: 'NORMAL', state: 'OPEN' })
+          }
+        ]
+      };
+
+      const result = simplifyBitbucketPRComments(blockerResponse) as SimplifiedPRResponse;
+      expect(result.summary.commentCount).toBe(3);
+      expect(result.summary.blockerCount).toBe(2);
+      expect(result.summary.unresolvedBlockerCount).toBe(1);
     });
 
     it('should preserve nested replies recursively', () => {
@@ -220,11 +293,13 @@ describe('PR Comment Mapper', () => {
               createdDate: 1600000000000,
               comments: [],
               threadResolved: false,
-              state: "OPEN"
+              state: "OPEN",
+              severity: "NORMAL"
             }
           ],
           threadResolved: false,
-          state: "OPEN"
+          state: "OPEN",
+          severity: "NORMAL"
         }
       ]);
     });
@@ -294,7 +369,8 @@ describe('PR Comment Mapper', () => {
             },
             comments: [],
             threadResolved: false,
-            state: 'OPEN'
+            state: 'OPEN',
+            severity: 'NORMAL'
           }
         }
       ]);
@@ -355,11 +431,13 @@ describe('PR Comment Mapper', () => {
             createdDate: 1600000000000,
             comments: [],
             threadResolved: true,
-            state: 'OPEN'
+            state: 'OPEN',
+            severity: 'NORMAL'
           }
         ],
         threadResolved: true,
-        state: 'OPEN'
+        state: 'OPEN',
+        severity: 'NORMAL'
       });
       expect(getCommentSummary(resolvedThreadResponse, { includeResolved: true })).toEqual([
         'User A on config.yml:6: Resolved thread root'
@@ -402,7 +480,8 @@ describe('PR Comment Mapper', () => {
           createdDate: 1600000000000,
           comments: [],
           threadResolved: false,
-          state: "OPEN"
+          state: "OPEN",
+          severity: "NORMAL"
         }
       ]);
     });
@@ -447,7 +526,8 @@ describe('PR Comment Mapper', () => {
           createdDate: 1600000000000,
           comments: [],
           threadResolved: false,
-          state: "OPEN"
+          state: "OPEN",
+          severity: "NORMAL"
         }
       ]);
 
@@ -465,7 +545,9 @@ describe('PR Comment Mapper', () => {
         summary: {
           totalActivities: 0,
           commentCount: 0,
-          unresolvedCount: 0
+          unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 
@@ -489,7 +571,9 @@ describe('PR Comment Mapper', () => {
         summary: {
           totalActivities: 0,
           commentCount: 0,
-          unresolvedCount: 0
+          unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0
         }
       };
 

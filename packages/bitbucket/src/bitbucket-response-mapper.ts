@@ -52,6 +52,8 @@ export function shapePullRequestCommentsResponse(
           totalActivities: Array.isArray(filteredResponse.values) ? filteredResponse.values.length : 0,
           commentCount: getCommentSummary(filteredResponse, options).length,
           unresolvedCount: 0,
+          blockerCount: 0,
+          unresolvedBlockerCount: 0,
         },
     items: getCommentSummary(filteredResponse, options),
   };
@@ -106,6 +108,8 @@ export function shapePullRequestCommentAck(comment: any): Record<string, any> {
     ...(comment?.id !== undefined ? { id: comment.id } : {}),
     ...(comment?.parent?.id !== undefined ? { parentId: comment.parent.id } : {}),
     ...(typeof comment?.state === 'string' ? { state: comment.state } : {}),
+    ...(typeof comment?.threadResolved === 'boolean' ? { threadResolved: comment.threadResolved } : {}),
+    ...(typeof comment?.severity === 'string' ? { severity: comment.severity } : {}),
     pending: comment?.state === 'PENDING',
     ...(typeof comment?.anchor?.path === 'string'
       ? {

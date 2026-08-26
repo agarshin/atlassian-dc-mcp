@@ -460,18 +460,20 @@ export class BitbucketService {
   }
 
   /**
-   * Update an existing pull request comment. Use this to edit text, change severity, or change state.
-   * On a BLOCKER (task) comment, setting state to 'RESOLVED' ticks the task. Note: this is NOT the same
-   * as the thread-level "Resolve" button on regular comment threads — that operates on CommentThread.resolved
-   * and is a separate concept not exposed by this endpoint.
+   * Update an existing pull request comment. Use this to edit text, change severity, change state, or
+   * resolve/reopen a comment thread. State and thread resolution are independent: `state` is the task
+   * state of a BLOCKER comment ('RESOLVED' ticks the task, 'OPEN' un-ticks it), while `threadResolved`
+   * toggles the thread-level "Resolve" button. A root BLOCKER comment can hold these independently, so
+   * they are sent as separate fields.
    * @param projectKey The project key
    * @param repositorySlug The repository slug
    * @param pullRequestId The pull request ID
    * @param commentId The comment ID to update
    * @param version The current version of the comment (required for optimistic locking)
    * @param text Optional new comment text
-   * @param state Optional new state. On a BLOCKER comment, 'RESOLVED' ticks the task and 'OPEN' un-ticks it.
+   * @param state Optional new task state. On a BLOCKER comment, 'RESOLVED' ticks the task and 'OPEN' un-ticks it.
    * @param severity Optional new severity. 'BLOCKER' converts a comment into a task, 'NORMAL' converts a task back to a regular comment.
+   * @param threadResolved Optional thread resolution. `true` resolves the comment thread, `false` reopens it.
    * @returns Promise with updated comment data
    */
   async updatePullRequestComment(
@@ -483,6 +485,7 @@ export class BitbucketService {
     text?: string,
     state?: 'OPEN' | 'RESOLVED',
     severity?: 'NORMAL' | 'BLOCKER',
+    threadResolved?: boolean,
     output: BitbucketMutationOutputMode = 'ack'
   ) {
     projectKey = projectKey.toUpperCase();
@@ -499,6 +502,10 @@ export class BitbucketService {
 
     if (severity) {
       comment.severity = severity;
+    }
+
+    if (threadResolved !== undefined) {
+      comment.threadResolved = threadResolved;
     }
 
     const result = await handleApiOperation(
@@ -1035,8 +1042,9 @@ export const bitbucketToolSchemas = {
     commentId: z.string().describe("The ID of the comment to update"),
     version: z.number().describe("The current version of the comment, required for optimistic locking. Get it from bitbucket_getPR_CommentsAndAction or from the response of the original post/update."),
     text: z.string().optional().describe("New comment text. Omit to leave unchanged."),
-    state: z.enum(['OPEN', 'RESOLVED']).optional().describe("New state. On a BLOCKER (task) comment, 'RESOLVED' ticks the task and 'OPEN' un-ticks it. This is NOT the thread-level 'Resolve' button on regular comment threads — that is a separate concept (CommentThread.resolved) and is not exposed by this endpoint."),
+    state: z.enum(['OPEN', 'RESOLVED']).optional().describe("New task state. On a BLOCKER (task) comment, 'RESOLVED' ticks the task and 'OPEN' un-ticks it. This is the task state only — to resolve or reopen the comment thread itself use threadResolved."),
     severity: z.enum(['NORMAL', 'BLOCKER']).optional().describe("New severity. Use 'BLOCKER' to convert a comment into a task, 'NORMAL' to convert it back."),
+    threadResolved: z.boolean().optional().describe("Thread resolution. Set true to resolve the comment thread (the 'Resolve' button) or false to reopen it. Independent of state: a BLOCKER comment's task state and its thread resolution can differ."),
     output: z.enum(['ack', 'full']).optional().describe("Return a compact acknowledgement or the full API response. Defaults to ack.")
   },
   getUser: {
