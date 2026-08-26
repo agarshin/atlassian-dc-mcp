@@ -88,6 +88,16 @@ server.tool(
 )
 
 server.tool(
+  "jira_updateIssueComment",
+  `Update the body of an existing comment on a JIRA issue in the ${jiraInstanceType}. Use jira_getIssueComments to find the comment id.`,
+  jiraToolSchemas.updateIssueComment,
+  async ({ issueKey, commentId, comment }) => {
+    const result = await jiraService.updateIssueComment(issueKey, commentId, comment);
+    return formatToolResponse(result);
+  }
+)
+
+server.tool(
   "jira_getTransitions",
   `Get available status transitions for a JIRA issue in the ${jiraInstanceType}. Returns a list of transitions with their IDs, names, and target statuses.`,
   jiraToolSchemas.getTransitions,
