@@ -9,7 +9,7 @@ jest.mock('../jira-client/index.js', () => ({
     getAttachment: jest.fn(),
   },
   IssueService: {
-    getIssue: jest.fn(),
+    getIssue1: jest.fn(),
   },
   MyselfService: {},
   SearchService: {},
@@ -58,7 +58,7 @@ describe('JiraService.downloadAttachments', () => {
   });
 
   it('downloads all attachments on an issue', async () => {
-    (IssueService.getIssue as jest.Mock).mockResolvedValue({
+    (IssueService.getIssue1 as jest.Mock).mockResolvedValue({
       fields: {
         attachment: [
           { id: '1', filename: 'a.txt', content: 'https://test-host/a' },
@@ -70,13 +70,13 @@ describe('JiraService.downloadAttachments', () => {
 
     const result = await service.downloadAttachments({ issueKey: 'PROJ-1', downloadSide: DISABLED_DOWNLOAD });
 
-    expect(IssueService.getIssue).toHaveBeenCalledWith('PROJ-1', undefined, ['attachment']);
+    expect(IssueService.getIssue1).toHaveBeenCalledWith('PROJ-1', undefined, 'attachment');
     expect(result.success).toBe(true);
     expect(result.data!.count).toBe(2);
   });
 
   it('filters issue attachments by filename', async () => {
-    (IssueService.getIssue as jest.Mock).mockResolvedValue({
+    (IssueService.getIssue1 as jest.Mock).mockResolvedValue({
       fields: {
         attachment: [
           { id: '1', filename: 'a.txt', content: 'https://test-host/a' },
@@ -101,7 +101,7 @@ describe('JiraService.downloadAttachments', () => {
   });
 
   it('fails when an issue has no matching attachment', async () => {
-    (IssueService.getIssue as jest.Mock).mockResolvedValue({ fields: { attachment: [] } });
+    (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ fields: { attachment: [] } });
 
     const result = await service.downloadAttachments({ issueKey: 'PROJ-1', filename: 'x.txt', downloadSide: DISABLED_DOWNLOAD });
 

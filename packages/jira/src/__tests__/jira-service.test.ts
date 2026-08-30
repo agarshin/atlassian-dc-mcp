@@ -14,7 +14,7 @@ jest.mock('../jira-client/index.js', () => ({
   IssueService: {
     getTransitions: jest.fn(),
     doTransition: jest.fn(),
-    getIssue: jest.fn(),
+    getIssue1: jest.fn(),
     editIssue: jest.fn(),
     createIssue: jest.fn(),
     getComments: jest.fn(),
@@ -149,33 +149,25 @@ describe('JiraService', () => {
 
     it('uses the richer default field profile for single issue reads', async () => {
       const mockIssue = { key: mockIssueKey };
-      (IssueService.getIssue as jest.Mock).mockResolvedValue(mockIssue);
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue(mockIssue);
 
       const result = await jiraService.getIssue(mockIssueKey);
 
       expect(result.success).toBe(true);
       expect(result.data).toBe(mockIssue);
-      expect(IssueService.getIssue).toHaveBeenCalledWith(mockIssueKey, undefined, [
-        'summary',
-        'description',
-        'status',
-        'assignee',
-        'reporter',
-        'priority',
-        'issuetype',
-        'labels',
-        'updated',
-        'parent',
-        'subtasks',
-      ]);
+      expect(IssueService.getIssue1).toHaveBeenCalledWith(
+        mockIssueKey,
+        undefined,
+        'summary,description,status,assignee,reporter,priority,issuetype,labels,updated,parent,subtasks',
+      );
     });
 
     it('honors explicit issue fields', async () => {
-      (IssueService.getIssue as jest.Mock).mockResolvedValue({ key: mockIssueKey });
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ key: mockIssueKey });
 
       await jiraService.getIssue(mockIssueKey, 'renderedFields', ['summary', 'status']);
 
-      expect(IssueService.getIssue).toHaveBeenCalledWith(mockIssueKey, 'renderedFields', ['summary', 'status']);
+      expect(IssueService.getIssue1).toHaveBeenCalledWith(mockIssueKey, 'renderedFields', 'summary,status');
     });
 
     it('uses the package default page size for issue comments', async () => {
@@ -223,14 +215,14 @@ describe('JiraService', () => {
   describe('getIssueDevelopmentInfo', () => {
     it('resolves the numeric issue id then requests pull requests by default', async () => {
       const mockDevInfo = { detail: [{ pullRequests: [] }] };
-      (IssueService.getIssue as jest.Mock).mockResolvedValue({ id: '1314681', key: mockIssueKey });
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ id: '1314681', key: mockIssueKey });
       (__request as jest.Mock).mockResolvedValue(mockDevInfo);
 
       const result = await jiraService.getIssueDevelopmentInfo(mockIssueKey);
 
       expect(result.success).toBe(true);
       expect(result.data).toBe(mockDevInfo);
-      expect(IssueService.getIssue).toHaveBeenCalledWith(mockIssueKey, undefined, ['id']);
+      expect(IssueService.getIssue1).toHaveBeenCalledWith(mockIssueKey, undefined, 'id');
       expect(__request).toHaveBeenCalledWith(OpenAPI, {
         method: 'GET',
         url: '/dev-status/1.0/issue/detail',
@@ -239,7 +231,7 @@ describe('JiraService', () => {
     });
 
     it('honors explicit dataType and applicationType', async () => {
-      (IssueService.getIssue as jest.Mock).mockResolvedValue({ id: '42' });
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ id: '42' });
       (__request as jest.Mock).mockResolvedValue({});
 
       await jiraService.getIssueDevelopmentInfo(mockIssueKey, 'repository', 'github');
@@ -252,7 +244,7 @@ describe('JiraService', () => {
     });
 
     it('fails without calling dev-status when the numeric id is missing', async () => {
-      (IssueService.getIssue as jest.Mock).mockResolvedValue({ key: mockIssueKey });
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ key: mockIssueKey });
 
       const result = await jiraService.getIssueDevelopmentInfo(mockIssueKey);
 
@@ -262,7 +254,7 @@ describe('JiraService', () => {
     });
 
     it('surfaces dev-status request errors', async () => {
-      (IssueService.getIssue as jest.Mock).mockResolvedValue({ id: '1314681' });
+      (IssueService.getIssue1 as jest.Mock).mockResolvedValue({ id: '1314681' });
       (__request as jest.Mock).mockRejectedValue(new Error('View Development Tools permission required'));
 
       const result = await jiraService.getIssueDevelopmentInfo(mockIssueKey);
